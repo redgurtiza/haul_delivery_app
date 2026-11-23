@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Haul – Transport &amp; Logistics</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<style>
+:root{--bg:#f4f6f8;--card:#fff;--tx:#14202b;--mut:#64727f;--bd:#e0e5ea;--ac:#0f766e;--acx:#fff;--soft:#e6f4f2;--warn:#b45309}
+@media (prefers-color-scheme:dark){:root{--bg:#0e151b;--card:#17212a;--tx:#e8eef3;--mut:#93a1ad;--bd:#2a3844;--ac:#2dd4bf;--acx:#06201d;--soft:#12332f;--warn:#fbbf24}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--tx);font:15px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+header{position:sticky;top:0;z-index:1000;background:var(--card);border-bottom:1px solid var(--bd);display:flex;gap:12px;align-items:center;flex-wrap:wrap;padding:10px 16px}
+.logo{font-weight:800;font-size:18px;color:var(--ac)}nav{display:flex;gap:4px;flex-wrap:wrap;flex:1}#who{display:flex;gap:8px;align-items:center;font-size:13px}
+button{font:inherit;cursor:pointer;border:1px solid var(--bd);background:var(--card);color:var(--tx);border-radius:8px;padding:8px 12px}button:disabled{opacity:.5}
+button.on,button.pri{background:var(--ac);color:var(--acx);border-color:var(--ac);font-weight:600}nav button{border:0;background:none;color:var(--mut)}nav button.on{background:var(--soft);color:var(--ac)}
+main{max-width:1000px;margin:0 auto;padding:16px}.card{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:16px;margin-bottom:14px}
+h2{margin:0 0 12px;font-size:20px}h3{margin:0 0 8px;font-size:16px}.mut{color:var(--mut);font-size:13px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px}
+label{display:block;font-size:13px;color:var(--mut);margin:8px 0 3px}input,select{width:100%;font:inherit;padding:9px;border:1px solid var(--bd);border-radius:8px;background:var(--bg);color:var(--tx)}
+.row{display:flex;justify-content:space-between;gap:10px;padding:6px 0;border-bottom:1px dashed var(--bd)}.row.t{font-weight:700;font-size:17px;border:0}
+.map{height:360px;border:1px solid var(--bd);border-radius:10px;margin:10px 0;z-index:0}
+.pin{width:26px;height:26px;border-radius:50%;color:#fff;font-weight:700;display:grid;place-items:center;border:2px solid #fff;box-shadow:0 1px 4px #0006}
+.pill{display:inline-block;padding:2px 9px;border-radius:99px;font-size:12px;background:var(--soft);color:var(--ac);font-weight:600}.pill.p{background:#fde68a;color:#78350f}
+.tw{overflow-x:auto}table{width:100%;border-collapse:collapse;min-width:640px}th,td{text-align:left;padding:8px;border-bottom:1px solid var(--bd);font-size:14px;vertical-align:top}th{color:var(--mut);font-weight:600}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:14px}.stat{margin:0}.stat b{display:block;font-size:24px}
+.opt{display:flex;gap:10px;border:1px solid var(--bd);border-radius:10px;padding:10px;margin-bottom:8px;cursor:pointer}.opt.on{border-color:var(--ac);background:var(--soft)}
+.prio{width:100%;text-align:left;padding:12px;border:2px dashed var(--warn)}.prio.on{background:var(--warn);color:#111;border-style:solid}
+.ticket{text-align:center;border:2px dashed var(--ac);background:var(--soft)}.oid{font:700 28px ui-monospace,monospace;letter-spacing:2px;color:var(--ac)}
+.steps{display:flex;gap:6px;margin:10px 0}.steps div{flex:1;text-align:center;font-size:12px;padding:6px 2px;border-top:4px solid var(--bd);color:var(--mut)}.steps .d{border-color:var(--ac);color:var(--tx);font-weight:600}
+.err{color:#dc2626;font-size:13px;margin:6px 0}.bar{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+#toast{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:#111;color:#fff;padding:10px 16px;border-radius:8px;display:none;z-index:2000;max-width:90%}
+.job{border-left:5px solid var(--ac)}.job.p{border-left-color:var(--warn)}
+</style></head><body>
+<header><span class="logo">&#9654; Haul</span><nav id="nav"></nav><div id="who"></div></header>
+<main id="app"></main><div id="toast"></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script>
+const $=s=>document.querySelector(s),API=window.API_BASE||'';
+const e=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const php=n=>'₱'+Number(n).toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2});
+const tm=t=>t?new Date(t).toLocaleString([],{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}):'—';
+const lb=s=>s[0]+s.slice(1).toLowerCase().replace('_',' ');
+const NAV={client:[['new','New delivery'],['track','Track'],['orders','My orders']],driver:[['jobs','My jobs'],['hist','History']],admin:[['q','Dispatch'],['cl','Clients'],['dr','Drivers'],['set','Pricing']]};
+const STEPS=['PENDING','ASSIGNED','PICKED_UP','IN_TRANSIT','DELIVERED'];
+let T=null,U=null,view='',clean=[],reg=false,D={priority:false,method:'GCash'},pick='pickup',mp,mk={},oid=null,cf=0,gps=null,lastPos=null,lastSent=0,busy=false;
+try{T=localStorage.getItem('t');U=JSON.parse(localStorage.getItem('u')||'null')}catch{}
+function toast(m){const t=$('#toast');t.textContent=m;t.style.display='block';clearTimeout(t._t);t._t=setTimeout(()=>t.style.display='none',3500)}
+async function api(p,m='GET',b){const r=await fetch(API+'/api'+p,{method:m,headers:{'Content-Type':'application/json',...(T?{Authorization:'Bearer '+T}:{})},body:b?JSON.stringify(b):undefined});let j={};try{j=await r.json()}catch{}
+ if(!r.ok){if(r.status===401&&T&&!p.startsWith('/auth/'))logout();throw new Error(j.error||'Request failed')}return j}
+const act=f=>async(...a)=>{try{await f(...a)}catch(x){toast(x.message)}};
+/* ---------- session ---------- */
+function setSession(r){T=r.token;U=r.user;try{localStorage.setItem('t',T);localStorage.setItem('u',JSON.stringify(U))}catch{}
+ D={priority:false,method:'GCash'};view=NAV[U.role][0][0];render()}
+function logout(){T=U=null;try{localStorage.clear()}catch{}stopGps();view='';render()}
+function authV(){$('#app').innerHTML=`<div class="card" style="max-width:420px;margin:30px auto"><h2>${reg?'Create client account':'Log in'}</h2>
+${reg?'<label>Name</label><input id="a_n"><label>Phone</label><input id="a_p"><label>Address</label><input id="a_a">':''}
+<label>Email</label><input id="a_e" type="email"><label>Password (min 8)</label><input id="a_w" type="password"><div class="err" id="aerr"></div>
+<div class="bar"><button class="pri" onclick="doAuth()">${reg?'Sign up':'Log in'}</button><button onclick="reg=!reg;authV()">${reg?'I have an account':'Create account'}</button></div>
+<p class="mut">Drivers and admins are created by an administrator.</p></div>`}
+async function doAuth(){try{const g=i=>$('#'+i).value.trim(),pw=$('#a_w').value;
+ const b=reg?{name:g('a_n'),phone:g('a_p'),address:g('a_a'),email:g('a_e'),password:pw}:{email:g('a_e'),password:pw};
+ setSession(await api(reg?'/auth/register':'/auth/login','POST',b))}catch(x){$('#aerr').textContent=x.message}}
+/* ---------- shell ---------- */
+function go(v){view=v;render()}
+async function render(){clean.forEach(f=>f());clean=[];
+ const cur=['pay','done'].includes(view)?'new':view;
+ $('#nav').innerHTML=U?NAV[U.role].map(n=>`<button class="${cur===n[0]?'on':''}" onclick="go('${n[0]}')">${n[1]}</button>`).join(''):'';
+ $('#who').innerHTML=U?`${e(U.name)} <span class="pill">${U.role}</span> <button onclick="logout()">Log out</button>`:'';
+ if(!U)return authV();if(U.role==='driver')driverBoot();
+ try{await V[view]()}catch(x){$('#app').innerHTML=`<div class="card err">${e(x.message)}</div>`}}
+const every=(f,ms)=>{const i=setInterval(()=>{if(document.activeElement.tagName!=='SELECT'&&document.activeElement.tagName!=='INPUT')f()},ms);clean.push(()=>clearInterval(i))};
+const tbl=(h,r)=>`<div class="tw"><table><tr>${h.map(x=>`<th>${x}</th>`).join('')}</tr>${r.join('')}</table></div>`;
+const hist=(os,cl)=>tbl(['Order',...(cl?['Client']:[]),'Item','Route','Total','Status','Placed'],os.map(o=>`<tr><td><b>${o.id}</b> ${o.priority?'<span class="pill p">P</span>':''}</td>${cl?`<td>${e(o.clientName)}</td>`:''}<td>${e(o.item)}</td><td>${e(o.pickup.name)} → ${e(o.dropoff.name)}</td><td>${php(o.fees.total)}</td><td><span class="pill">${lb(o.status)}</span></td><td>${tm(o.createdAt)}</td></tr>`));
+const stepper=s=>{const i=STEPS.indexOf(s);return `<div class="steps">${STEPS.map((x,j)=>`<div class="${j<=i?'d':''}">${lb(x)}</div>`).join('')}</div>`};
+/* ---------- maps ---------- */
+const ic=(t,c)=>L.divIcon({className:'',html:`<div class="pin" style="background:${c}">${t}</div>`,iconSize:[26,26],iconAnchor:[13,13]});
+function initMap(click){const m=L.map('map').setView([16.4115,120.595],13);
+ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap contributors'}).addTo(m);
+ if(click)m.on('click',ev=>click(ev.latlng));clean.push(()=>m.remove());return m}
+const hav=(a,b)=>{const r=Math.PI/180,d=Math.sin((b.lat-a.lat)*r/2)**2+Math.cos(a.lat*r)*Math.cos(b.lat*r)*Math.sin((b.lng-a.lng)*r/2)**2;return 12742*Math.asin(Math.sqrt(d))*1.3};
+const geo=async u=>{try{return await (await fetch('https://nominatim.openstreetmap.org/'+u)).json()}catch{return null}};
+/* ---------- client ---------- */
+const V={};
+function pinBtns(){$('#bA').className=pick==='pickup'?'pri':'';$('#bB').className=pick==='dropoff'?'pri':'';
+ $('#bA').textContent='A · Pickup: '+(D.pickup?D.pickup.name:'not set');$('#bB').textContent='B · Drop-off: '+(D.dropoff?D.dropoff.name:'not set');
+ $('#dist').textContent=D.pickup&&D.dropoff?`Approx. road distance: ${hav(D.pickup,D.dropoff).toFixed(1)} km (final price is calculated by the server)`:''}
+function drawPins(){['pickup','dropoff','line'].forEach(k=>{if(mk[k]){mk[k].remove();mk[k]=null}});
+ if(D.pickup)mk.pickup=L.marker([D.pickup.lat,D.pickup.lng],{icon:ic('A','#0f766e')}).addTo(mp);
+ if(D.dropoff)mk.dropoff=L.marker([D.dropoff.lat,D.dropoff.lng],{icon:ic('B','#dc2626')}).addTo(mp);
+ if(D.pickup&&D.dropoff){mk.line=L.polyline([[D.pickup.lat,D.pickup.lng],[D.dropoff.lat,D.dropoff.lng]],{color:'#0f766e',dashArray:'8 6'}).addTo(mp);mp.fitBounds(mk.line.getBounds(),{padding:[40,40]})}}
+function setPin(ll,name){const w=pick;D[w]={name,lat:+ll.lat.toFixed(6),lng:+ll.lng.toFixed(6)};if(w==='pickup'&&!D.dropoff)pick='dropoff';drawPins();pinBtns()}
+async function mapClick(ll){setPin(ll,'Pinned location');const w=pick==='pickup'?'dropoff':'pickup',t=D[w==='pickup'?'dropoff':'pickup'];
+ const j=await geo(`reverse?format=jsonv2&lat=${ll.lat}&lon=${ll.lng}`);const n=j&&j.display_name?j.display_name.split(',').slice(0,3).join(','):null;
+ for(const k of ['pickup','dropoff'])if(n&&D[k]&&D[k].name==='Pinned location'&&Math.abs(D[k].lat-ll.lat)<1e-5){D[k].name=n}pinBtns()}
+const search=act(async()=>{const q=$('#srch').value.trim();if(!q)return;const r=await geo(`search?format=jsonv2&limit=1&countrycodes=ph&q=${encodeURIComponent(q)}`);
+ if(!r||!r[0])return toast('Place not found');const ll={lat:+r[0].lat,lng:+r[0].lon};setPin(ll,r[0].display_name.split(',').slice(0,3).join(','));mp.setView(ll,15)});
+V.new=async()=>{$('#app').innerHTML=`<div class="card"><h2>New delivery</h2><p class="mut">Choose a pin, then click the map or search an address.</p>
+<div class="bar"><button id="bA" onclick="pick='pickup';pinBtns()"></button><button id="bB" onclick="pick='dropoff';pinBtns()"></button></div>
+<div class="bar"><input id="srch" placeholder="Search address or place" style="flex:1;min-width:200px" onkeydown="if(event.key==='Enter')search()"><button onclick="search()">Search</button></div>
+<div id="map" class="map"></div><p class="mut" id="dist"></p></div>
+<div class="card"><h3>Package</h3><div class="grid"><div><label>Description</label><input id="p_i" value="${e(D.item||'')}"></div>
+${[['l','Length (cm)','length'],['w','Width (cm)','width'],['h','Height (cm)','height'],['k','Weight (kg)','weightKg']].map(f=>`<div><label>${f[1]}</label><input id="p_${f[0]}" type="number" min="0.1" value="${D[f[2]]||''}"></div>`).join('')}</div>
+<div class="err" id="perr"></div><div class="bar"><button class="pri" onclick="toPay()">Continue to payment</button></div></div>`;
+ mp=initMap(mapClick);mk={};drawPins();pinBtns()};
+function toPay(){const g=i=>$('#p_'+i).value;Object.assign(D,{item:g('i').trim(),length:+g('l'),width:+g('w'),height:+g('h'),weightKg:+g('k')});
+ const er=m=>$('#perr').textContent=m;if(!D.pickup||!D.dropoff)return er('Set both pins on the map.');
+ if(!D.item||!(D.length>0&&D.width>0&&D.height>0&&D.weightKg>0))return er('Enter a description, size (L×W×H) and weight.');go('pay')}
+const body=()=>({pickup:D.pickup,dropoff:D.dropoff,item:D.item,priority:D.priority,package:{length:D.length,width:D.width,height:D.height,weightKg:D.weightKg}});
+V.pay=async()=>{const q=await api('/quote','POST',body()),M=['GCash','Card','Bank Transfer','COD'];
+ $('#app').innerHTML=`<div class="card"><h2>Payment</h2><p class="mut">${e(D.item)} · ${e(D.pickup.name)} → ${e(D.dropoff.name)} · ${q.distanceKm} km</p>
+<div class="row"><span>Base fee</span><span>${php(q.base)}</span></div><div class="row"><span>Distance (${q.distanceKm} km)</span><span>${php(q.distance)}</span></div>
+<div class="row"><span>Weight/size surcharge (billable ${q.billableKg} kg)</span><span>${php(q.weightSurcharge)}</span></div>
+${q.priority?`<div class="row"><span>Priority delivery</span><span>${php(q.priorityFee)}</span></div>`:''}<div class="row"><span>VAT</span><span>${php(q.vat)}</span></div>
+<div class="row t"><span>Total</span><span>${php(q.total)}</span></div></div>
+<button class="prio ${D.priority?'on':''}" onclick="D.priority=!D.priority;render()">&#9889; ${D.priority?'Priority delivery ON — tap to remove':'Add priority delivery (+10–15%) — faster pickup, first in the queue'}</button><br><br>
+<div class="card"><h3>Payment method</h3>${M.map(m=>`<div class="opt ${D.method===m?'on':''}" onclick="D.method='${m}';render()"><b>${D.method===m?'●':'○'}</b> ${m==='COD'?'Cash on pickup':m}</div>`).join('')}
+<div class="bar"><button onclick="go('new')">Back</button><button class="pri" id="payb" onclick="pay()">Pay ${php(q.total)}</button></div></div>`};
+const pay=act(async()=>{if(busy)return;busy=true;$('#payb').disabled=true;try{const {order}=await api('/orders','POST',body());
+ try{D.token=(await api(`/orders/${order.id}/pay`,'POST',{method:D.method})).token;go('done')}catch(x){await api(`/orders/${order.id}/cancel`,'POST').catch(()=>0);throw x}}finally{busy=false;const b=$('#payb');if(b)b.disabled=false}});
+V.done=async()=>{const t=D.token;$('#app').innerHTML=`<div class="card ticket"><div class="mut">Payment received · Your order token</div><div class="oid">${t.orderId}</div>${t.priority?'<span class="pill p">PRIORITY</span>':''}
+<div class="grid" style="margin-top:12px"><div><div class="mut">Estimated pickup</div><b>${tm(t.estPickup)}</b></div><div><div class="mut">Estimated delivery</div><b>${tm(t.estDelivery)}</b></div><div><div class="mut">Total</div><b>${php(t.total)}</b></div></div>
+<div class="bar" style="justify-content:center"><button class="pri" onclick="oid='${t.orderId}';go('track')">Track this order</button><button onclick="D={priority:false,method:'GCash'};pick='pickup';go('new')">New delivery</button></div></div>`};
+V.orders=async()=>{const {orders}=await api('/orders');$('#app').innerHTML=`<div class="card"><h2>My orders</h2>${orders.length?tbl(['Order','Item','Route','Total','Status','Placed',''],orders.map(o=>`<tr><td><b>${o.id}</b> ${o.priority?'<span class="pill p">P</span>':''}</td><td>${e(o.item)}</td><td>${e(o.pickup.name)} → ${e(o.dropoff.name)}</td><td>${php(o.fees.total)}</td><td><span class="pill">${lb(o.status)}</span></td><td>${tm(o.createdAt)}</td><td>${['PENDING','ASSIGNED','PICKED_UP','IN_TRANSIT','DELIVERED'].includes(o.status)?`<button onclick="oid='${o.id}';go('track')">Track</button>`:''}</td></tr>`)):'<p class="mut">No orders yet.</p>'}</div>`};
+V.track=async()=>{const {orders}=await api('/orders'),os=orders.filter(o=>o.status!=='AWAITING_PAYMENT');
+ if(!os.length){$('#app').innerHTML='<div class="card">No orders to track yet.</div>';return}
+ if(!os.find(o=>o.id===oid))oid=os[0].id;
+ $('#app').innerHTML=`<div class="card"><h2>Track order</h2><select onchange="oid=this.value;render()">${os.map(o=>`<option value="${o.id}" ${o.id===oid?'selected':''}>${o.id} – ${e(o.item)}</option>`).join('')}</select><div id="tinfo"></div><div id="map" class="map"></div><p class="mut">Live location updates while the driver is on the road.</p></div>`;
+ mp=initMap();let dm=null;const id=oid;
+ const load=async()=>{const t=await api(`/orders/${id}/track`),o=t.order;
+  $('#tinfo').innerHTML=(o.status==='CANCELLED'?'<p class="err">Cancelled</p>':stepper(o.status))+`<p class="mut">Pickup ETA ${tm(o.estPickup)} · Delivery ETA ${tm(o.estDelivery)}${t.driver?` · Driver ${e(t.driver.name)} (${e(t.driver.vehicle||'')} ${e(t.driver.plate||'')})`:' · Driver not yet assigned'}</p>`;
+  if(!mk.t){mk.t=1;L.marker([o.pickup.lat,o.pickup.lng],{icon:ic('A','#0f766e')}).addTo(mp);L.marker([o.dropoff.lat,o.dropoff.lng],{icon:ic('B','#dc2626')}).addTo(mp);mp.fitBounds([[o.pickup.lat,o.pickup.lng],[o.dropoff.lat,o.dropoff.lng]],{padding:[40,40]})}
+  if(t.driver&&t.driver.lat!=null&&['PICKED_UP','IN_TRANSIT'].includes(o.status))mv(t.driver.lat,t.driver.lng)};
+ const mv=(la,ln)=>{if(!dm)dm=L.marker([la,ln],{icon:ic('&#128666;','#f59e0b')}).addTo(mp);else dm.setLatLng([la,ln])};
+ mk={};await load();
+ const es=new EventSource(`${API}/api/orders/${id}/stream?token=${encodeURIComponent(T)}`);
+ es.addEventListener('location',ev=>{const d=JSON.parse(ev.data);mv(d.lat,d.lng)});es.addEventListener('status',()=>load().catch(()=>0));clean.push(()=>es.close())};
+/* ---------- driver ---------- */
+function startGps(){if(gps!==null||!navigator.geolocation)return;
+ gps=navigator.geolocation.watchPosition(p=>{lastPos={lat:p.coords.latitude,lng:p.coords.longitude};if(Date.now()-lastSent>5000){lastSent=Date.now();api('/driver/location','POST',lastPos).catch(()=>0)}},()=>toast('Allow location access so customers can track you'),{enableHighAccuracy:true,maximumAge:3000})}
+function stopGps(){if(gps!==null&&navigator.geolocation)navigator.geolocation.clearWatch(gps);gps=null}
+const driverBoot=()=>{};
+const setAvail=act(async a=>{await api('/driver/availability','PATCH',{availability:a});a==='available'?startGps():stopGps();render()});
+const nextS={ASSIGNED:['PICKED_UP','Mark picked up'],PICKED_UP:['IN_TRANSIT','Start trip'],IN_TRANSIT:['DELIVERED','Mark delivered']};
+const advance=act(async(id,s)=>{await api(`/driver/orders/${id}/status`,'POST',{status:s,...(lastPos||{})});render()});
+V.jobs=async()=>{const [me,{jobs}]=await Promise.all([api('/driver/me'),api('/driver/jobs')]);me.availability==='available'?startGps():stopGps();
+ $('#app').innerHTML=`<div class="card"><h2>My jobs</h2><p>Status: <span class="pill">${me.availability}</span> · ${e(me.vehicle||'')} ${e(me.plate||'')}</p>
+<div class="bar" style="margin:0"><button class="${me.availability==='available'?'on':''}" onclick="setAvail('available')">Go on duty</button><button onclick="setAvail('offline')">Go offline</button></div>
+<p class="mut">${me.availability==='available'?'Sharing live location with customers.':'Go on duty to share location and receive jobs.'}</p></div>
+${jobs.length?jobs.map(o=>{const n=nextS[o.status],tgt=o.status==='ASSIGNED'?o.pickup:o.dropoff;return `<div class="card job ${o.priority?'p':''}"><b>${o.id}</b> ${o.priority?'<span class="pill p">PRIORITY</span>':''} <span class="pill">${lb(o.status)}</span>
+<p><b>${e(o.item)}</b> · ${o.package.weightKg} kg · ${o.package.length}×${o.package.width}×${o.package.height} cm<br>Client: ${e(o.clientName)}<br>A: ${e(o.pickup.name)}<br>B: ${e(o.dropoff.name)}<br><span class="mut">Pickup by ${tm(o.estPickup)} · deliver by ${tm(o.estDelivery)} · ${o.payment.status==='COD'?'Collect '+php(o.fees.total):'Paid'}</span></p>
+<div class="bar"><a href="https://www.google.com/maps/dir/?api=1&destination=${tgt.lat},${tgt.lng}" target="_blank" rel="noopener"><button>Navigate to ${o.status==='ASSIGNED'?'pickup':'drop-off'}</button></a>${n?`<button class="pri" onclick="advance('${o.id}','${n[0]}')">${n[1]}</button>`:''}</div></div>`}).join(''):'<div class="card mut">No active jobs. New assignments appear here automatically.</div>'}`;
+ every(()=>render(),20000)};
+V.hist=async()=>{const {orders}=await api('/driver/history');$('#app').innerHTML=`<div class="card"><h2>Completed deliveries</h2>${orders.length?hist(orders,true):'<p class="mut">None yet.</p>'}</div>`};
+/* ---------- admin ---------- */
+const ADM=['PENDING','ASSIGNED','PICKED_UP','IN_TRANSIT','DELIVERED','CANCELLED'];
+const assign=act(async(id,d)=>{if(d)await api(`/admin/orders/${id}/assign`,'POST',{driverId:+d});render()});
+const setSt=act(async(id,s)=>{await api(`/admin/orders/${id}/status`,'PATCH',{status:s});render()});
+const move=act(async(id,d)=>{await api(`/admin/orders/${id}/move`,'POST',{direction:d});render()});
+V.q=async()=>{const [st,{orders},{drivers},all]=await Promise.all([api('/admin/stats'),api('/admin/orders'),api('/admin/drivers'),api('/admin/orders?scope=all')]),b=st.byStatus;
+ $('#app').innerHTML=`<div class="stats">${[['Active',orders.length],['Priority',orders.filter(o=>o.priority).length],['Delivered',b.DELIVERED||0],['Drivers on duty',st.activeDrivers],['Revenue',php(st.revenue)]].map(s=>`<div class="card stat"><span class="mut">${s[0]}</span><b>${s[1]}</b></div>`).join('')}</div>
+<div class="card"><h2>Dispatch queue</h2><p class="mut">Priority first. ▲▼ reorders within the same tier. Auto-refreshes every 15 s.</p>${orders.length?tbl(['#','Order','Client','Route','Kg','Driver','Status','Order'],orders.map((o,i)=>`<tr><td>${i+1}</td><td><b>${o.id}</b> ${o.priority?'<span class="pill p">PRIORITY</span>':''}<div class="mut">Pickup ${tm(o.estPickup)}</div></td><td>${e(o.clientName)}</td><td>${e(o.pickup.name)} → ${e(o.dropoff.name)}<div class="mut">${o.distanceKm} km</div></td><td>${o.package.weightKg}</td>
+<td><select ${['PENDING','ASSIGNED'].includes(o.status)?'':'disabled'} onchange="assign('${o.id}',this.value)"><option value="">${o.driverName?e(o.driverName):'Unassigned'}</option>${drivers.filter(d=>d.active&&d.id!==o.driverId).map(d=>`<option value="${d.id}">${e(d.name)} (${d.activeJobs} jobs${d.availability==='available'?'':', off'})</option>`).join('')}</select></td>
+<td><select onchange="setSt('${o.id}',this.value)">${ADM.map(s=>`<option value="${s}" ${s===o.status?'selected':''}>${lb(s)}</option>`).join('')}</select></td><td><button onclick="move('${o.id}','up')">▲</button><button onclick="move('${o.id}','down')">▼</button></td></tr>`)):'<p class="mut">No active orders.</p>'}</div>
+<div class="card"><h3>All orders</h3>${hist(all.orders,true)}</div>`;every(()=>render(),15000)};
+V.cl=async()=>{if(cf){const {client:c,orders}=await api('/admin/clients/'+cf);$('#app').innerHTML=`<div class="card"><button onclick="cf=0;render()">← All clients</button><h2 style="margin-top:12px">${e(c.name)}</h2><p class="mut">${e(c.address)} · ${e(c.phone)} · ${e(c.email)}</p>${hist(orders,false)}</div>`;return}
+ const {clients}=await api('/admin/clients');$('#app').innerHTML=`<div class="card"><h2>Clients</h2>${tbl(['Name','Address','Phone','Orders','Ongoing',''],clients.map(c=>`<tr><td><b>${e(c.name)}</b><div class="mut">${e(c.email)}</div></td><td>${e(c.address)}</td><td>${e(c.phone)}</td><td>${c.totalOrders}</td><td>${c.ongoingOrders}</td><td><button onclick="cf=${c.id};render()">View history</button></td></tr>`))}</div>`};
+const addDrv=act(async()=>{const g=i=>$('#d_'+i).value.trim();await api('/admin/drivers','POST',{name:g('n'),email:g('e'),phone:g('p'),password:$('#d_w').value,vehicle:g('v'),plate:g('l')});toast('Driver added');render()});
+const toggle=act(async(id,a)=>{await api(`/admin/users/${id}/active`,'PATCH',{active:a});render()});
+V.dr=async()=>{const {drivers}=await api('/admin/drivers');
+ $('#app').innerHTML=`<div class="card"><h2>Drivers</h2><div id="map" class="map"></div>${tbl(['Name','Vehicle','Availability','Active jobs','Last seen','Account'],drivers.map(d=>`<tr><td><b>${e(d.name)}</b><div class="mut">${e(d.phone)}</div></td><td>${e(d.vehicle)} ${e(d.plate)}</td><td><span class="pill">${d.availability}</span></td><td>${d.activeJobs}</td><td>${tm(d.located_at)}</td><td><button onclick="toggle(${d.id},${d.active?0:1})">${d.active?'Disable':'Enable'}</button></td></tr>`))}</div>
+<div class="card"><h3>Add driver</h3><div class="grid">${[['n','Name'],['e','Email'],['p','Phone'],['w','Password (min 8)'],['v','Vehicle'],['l','Plate']].map(f=>`<div><label>${f[1]}</label><input id="d_${f[0]}" ${f[0]==='w'?'type="password"':''}></div>`).join('')}</div><div class="bar"><button class="pri" onclick="addDrv()">Create driver</button></div></div>`;
+ mp=initMap();const pts=drivers.filter(d=>d.lat!=null).map(d=>{L.marker([d.lat,d.lng],{icon:ic('&#128666;','#f59e0b')}).addTo(mp).bindPopup(e(d.name));return[d.lat,d.lng]});if(pts.length)mp.fitBounds(pts,{padding:[40,40],maxZoom:15});every(()=>{if(!document.querySelector('#d_n').value)render()},20000)};
+const saveSet=act(async()=>{const p={};document.querySelectorAll('[data-k]').forEach(i=>p[i.dataset.k]=+i.value);await api('/admin/settings','PUT',{pricing:p});toast('Pricing saved');render()});
+V.set=async()=>{const {pricing}=await api('/admin/settings');$('#app').innerHTML=`<div class="card"><h2>Pricing &amp; ETA settings</h2><p class="mut">Priority rate must stay between 0.10 and 0.15. VAT is a fraction (0.12 = 12%).</p><div class="grid">${Object.entries(pricing).map(([k,v])=>`<div><label>${k}</label><input type="number" step="any" data-k="${k}" value="${v}"></div>`).join('')}</div><div class="bar"><button class="pri" onclick="saveSet()">Save</button></div></div>`};
+/* ---------- boot ---------- */
+(async()=>{if(T){try{U=(await api('/auth/me')).user;if(!view)view=NAV[U.role][0][0]}catch{T=U=null}}render()})();
+</script></body></html>
